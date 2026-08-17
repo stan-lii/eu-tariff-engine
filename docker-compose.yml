@@ -1,0 +1,260 @@
+# EU Tariff Engine: Docker Compose with Named Profiles
+# Usage:
+#   Core only:  docker compose --profile core up -d
+#   With obs:   docker compose --profile core --profile obs up -d
+#   Stop all:   docker compose down
+#   Stop + data: docker compose down -v
+
+name: tariff-engine
+
+# ============================================================
+# CORE PROFILE: PostgreSQL + pgvector, Redis, MinIO
+# Always on during development. ~1.5 to 2 GB RAM.
+# ============================================================
+
+services:
+  te-postgres:
+    image: pgvector/pgvector:pg17
+    profiles: [core]
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tariff_engine}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tariff_engine_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-tariff_engine}
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - te_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tariff_engine}"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  te-redis:
+    image: redis:7
+    profiles: [core]
+    restart: unless-stopped
+    mem_limit: 128m
+    command: >
+      --maxmemory 100mb
+      --maxmemory-policy noeviction
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - te_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  te-minio:
+    image: minio/minio:latest
+    profiles: [core]
+    restart: unless-stopped
+    mem_limit: 512m
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin_dev}
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - te_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 3s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # ============================================================
+  # OBS PROFILE: Langfuse v4 (web, worker, ClickHouse, its own
+  # Postgres, Redis, MinIO). On demand only. ~6 to 8 GB RAM.
+  # ============================================================
+
+  lf-postgres:
+    image: postgres:17
+    profiles: [obs]
+    restart: unless-stopped
+    mem_limit: 256m
+    environment:
+      POSTGRES_USER: ${LF_POSTGRES_USER:-langfuse}
+      POSTGRES_PASSWORD: ${LF_POSTGRES_PASSWORD:-langfuse_dev}
+      POSTGRES_DB: ${LF_POSTGRES_DB:-langfuse}
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - lf_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LF_POSTGRES_USER:-langfuse}"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  lf-redis:
+    image: redis:7
+    profiles: [obs]
+    restart: unless-stopped
+    mem_limit: 128m
+    command: >
+      --requirepass ${LF_REDIS_AUTH:-langfuse_redis_dev}
+      --maxmemory-policy noeviction
+    ports:
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - lf_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${LF_REDIS_AUTH:-langfuse_redis_dev}", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  lf-clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    profiles: [obs]
+    restart: unless-stopped
+    mem_limit: 2g
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: ${LF_CLICKHOUSE_USER:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${LF_CLICKHOUSE_PASSWORD:-clickhouse_dev}
+    ports:
+      - "127.0.0.1:8123:8123"
+      - "127.0.0.1:9009:9000"
+    volumes:
+      - lf_clickhouse_data:/var/lib/clickhouse
+      - lf_clickhouse_logs:/var/log/clickhouse-server
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  lf-minio:
+    image: minio/minio:latest
+    profiles: [obs]
+    restart: unless-stopped
+    mem_limit: 256m
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server /data --console-address ":9001"'
+    environment:
+      MINIO_ROOT_USER: ${LF_MINIO_ROOT_USER:-langfuse_minio}
+      MINIO_ROOT_PASSWORD: ${LF_MINIO_ROOT_PASSWORD:-langfuse_minio_dev}
+    ports:
+      - "127.0.0.1:9090:9000"
+      - "127.0.0.1:9091:9001"
+    volumes:
+      - lf_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 3s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  lf-worker:
+    image: langfuse/langfuse-worker:3
+    profiles: [obs]
+    restart: unless-stopped
+    mem_limit: 1g
+    depends_on:
+      lf-postgres:
+        condition: service_healthy
+      lf-redis:
+        condition: service_healthy
+      lf-clickhouse:
+        condition: service_healthy
+      lf-minio:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3030:3030"
+    environment: &lf-env
+      DATABASE_URL: "postgresql://${LF_POSTGRES_USER:-langfuse}:${LF_POSTGRES_PASSWORD:-langfuse_dev}@lf-postgres:5432/${LF_POSTGRES_DB:-langfuse}"
+      NEXTAUTH_URL: "http://localhost:3000"
+      SALT: "${LF_SALT:-langfuse_salt_change_me}"
+      ENCRYPTION_KEY: "${LF_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}"
+      TELEMETRY_ENABLED: "false"
+      CLICKHOUSE_MIGRATION_URL: "clickhouse://lf-clickhouse:9000"
+      CLICKHOUSE_URL: "http://lf-clickhouse:8123"
+      CLICKHOUSE_USER: "${LF_CLICKHOUSE_USER:-clickhouse}"
+      CLICKHOUSE_PASSWORD: "${LF_CLICKHOUSE_PASSWORD:-clickhouse_dev}"
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: "langfuse"
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: "auto"
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: "${LF_MINIO_ROOT_USER:-langfuse_minio}"
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: "${LF_MINIO_ROOT_PASSWORD:-langfuse_minio_dev}"
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: "http://lf-minio:9000"
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: "events/"
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: "langfuse"
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: "auto"
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: "${LF_MINIO_ROOT_USER:-langfuse_minio}"
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: "${LF_MINIO_ROOT_PASSWORD:-langfuse_minio_dev}"
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: "http://lf-minio:9000"
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: "media/"
+      REDIS_HOST: "lf-redis"
+      REDIS_PORT: "6379"
+      REDIS_AUTH: "${LF_REDIS_AUTH:-langfuse_redis_dev}"
+
+  lf-web:
+    image: langfuse/langfuse:3
+    profiles: [obs]
+    restart: unless-stopped
+    mem_limit: 2g
+    depends_on:
+      lf-postgres:
+        condition: service_healthy
+      lf-redis:
+        condition: service_healthy
+      lf-clickhouse:
+        condition: service_healthy
+      lf-minio:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      <<: *lf-env
+      NEXTAUTH_SECRET: "${LF_NEXTAUTH_SECRET:-langfuse_secret_change_me}"
+      LANGFUSE_INIT_ORG_ID: "tariff-engine-org"
+      LANGFUSE_INIT_ORG_NAME: "tariff-engine"
+      LANGFUSE_INIT_PROJECT_NAME: "tariff-engine-dev"
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: "${LF_PUBLIC_KEY:-pk-lf-dev}"
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: "${LF_SECRET_KEY:-sk-lf-dev}"
+      LANGFUSE_INIT_USER_EMAIL: "${LF_INIT_EMAIL:-dev@tariff-engine.local}"
+      LANGFUSE_INIT_USER_NAME: "${LF_INIT_USER:-developer}"
+      LANGFUSE_INIT_USER_PASSWORD: "${LF_INIT_PASSWORD:-langfuse_dev}"
+
+  # ============================================================
+  # PARSE PROFILE: Docling batch container (optional).
+  # On demand only. ~2 to 4 GB RAM.
+  # ============================================================
+
+  # Uncomment when needed in Phase 5.
+  # te-docling:
+  #   image: quay.io/docling-project/docling-serve:latest
+  #   profiles: [parse]
+  #   restart: unless-stopped
+  #   mem_limit: 4g
+  #   ports:
+  #     - "127.0.0.1:5001:5001"
+
+volumes:
+  te_postgres_data:
+  te_redis_data:
+  te_minio_data:
+  lf_postgres_data:
+  lf_redis_data:
+  lf_clickhouse_data:
+  lf_clickhouse_logs:
+  lf_minio_data:

@@ -78,6 +78,29 @@ Output is informational. The legal act in EUR-Lex is authoritative over any data
 | Sweden Tullverket | National tariff (XML) | National expansion |
 | Belgium TARBEL | National tariff (XML) | National expansion |
 
+## Local Development
+
+### Memory Budget
+
+This project runs on a 16 GB Windows machine with WSL2 capped at 10 GB. Docker Compose uses named profiles so you never run all services at once.
+
+| Profile | Services | Command | RAM |
+|---------|----------|---------|-----|
+| `core` | PostgreSQL+pgvector, Redis, MinIO | `make up` | ~1.5 GB |
+| `obs` | Langfuse v4 (web, worker, ClickHouse, Postgres, Redis, MinIO) | `make up-obs` | ~6 to 8 GB |
+| `parse` | Docling batch container | `make up-parse` | ~2 to 4 GB |
+
+**Default workflow:** run `make up` for normal development. Run `make up-obs` only during LLM work sessions and evaluation runs. Dagster dev server and Langfuse both use port 3000; never run both simultaneously.
+
+### Quick Start
+
+```bash
+cd ~/projects/eu-tariff-engine    # inside WSL2 Ubuntu
+make up                           # start core services
+make health                       # verify services are healthy
+make dev                          # start Dagster dev server (port 3000)
+```
+
 ## Status
 
 Under active development. Phase 0 (governance and repository foundation).

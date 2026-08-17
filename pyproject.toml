@@ -5,7 +5,11 @@ description = "EU Tariff Compliance and Validation Engine"
 readme = "README.md"
 requires-python = ">=3.13"
 license = "Apache-2.0"
-dependencies = []
+dependencies = [
+    "dagster>=1.13.18",
+    "dagster-postgres>=0.29.18",
+    "dagster-webserver>=1.13.18",
+]
 
 [project.scripts]
 eu-tariff-engine = "tariff_engine:main"
@@ -19,7 +23,9 @@ module-name = "tariff_engine"
 
 [dependency-groups]
 dev = [
+    "dagster-dg-cli>=1.13.18",
     "import-linter>=2.13",
+    "langfuse>=4.14.4",
     "mypy>=2.3.1",
     "pip-audit>=2.10.1",
     "pip-licenses>=5.5.5",
@@ -55,6 +61,10 @@ strict = true
 warn_return_any = true
 warn_unused_configs = true
 
+[[tool.mypy.overrides]]
+module = "dagster.*"
+ignore_missing_imports = true
+
 [tool.importlinter]
 root_packages = ["tariff_engine"]
 
@@ -78,3 +88,9 @@ markers = [
     "live: Live tests hitting real APIs (scheduled only)",
 ]
 addopts = "-m 'unit or contract' --strict-markers"
+
+[tool.dg]
+is_component_lib = false
+
+[tool.dagster]
+module_name = "tariff_engine.interfaces.definitions"
