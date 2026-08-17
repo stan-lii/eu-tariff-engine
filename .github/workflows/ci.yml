@@ -99,20 +99,19 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: actions/setup-node@v4
         with:
-          enable-cache: true
+          node-version: '22'
 
-      - name: Install Python 3.13
-        run: uv python install 3.13
-
-      - name: Install dependencies
-        run: uv sync --frozen --dev
+      - name: Install OpenSpec
+        run: npm install -g @fission-ai/openspec@latest
 
       - name: Validate specs
+        env:
+          OPENSPEC_TELEMETRY: '0'
         run: |
           if [ -d "openspec" ]; then
-            uv run openspec validate --all --strict --json --no-interactive
+            openspec validate --all --strict --json --no-interactive
           else
             echo "OpenSpec not initialized yet. Skipping."
           fi
