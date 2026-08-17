@@ -1,0 +1,4 @@
+"""Module-specific exceptions for {{MODULE_NAME}}.
+
+All exceptions inherit from the shared TariffEngineError hierarchy.
+"""

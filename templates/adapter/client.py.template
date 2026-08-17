@@ -1,0 +1,4 @@
+"""Transport client for the {{MODULE_NAME}} source.
+
+Handles HTTP requests, retries, and rate limits.
+"""

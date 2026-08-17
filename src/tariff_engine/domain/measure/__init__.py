@@ -1,0 +1,1 @@
+"""Tariff measure domain models."""

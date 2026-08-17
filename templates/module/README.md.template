@@ -1,0 +1,17 @@
+# {{MODULE_NAME}}
+
+## Purpose
+
+{{MODULE_DESCRIPTION}}
+
+## Inputs
+
+(Document the inputs this module accepts.)
+
+## Outputs
+
+(Document the outputs this module produces.)
+
+## Invariants
+
+(Document the rules that must always hold.)
