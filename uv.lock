@@ -711,6 +711,7 @@ dependencies = [
     { name = "dagster" },
     { name = "dagster-postgres" },
     { name = "dagster-webserver" },
+    { name = "sqlalchemy" },
 ]
 
 [package.dev-dependencies]
@@ -731,6 +732,7 @@ requires-dist = [
     { name = "dagster", specifier = ">=1.13.18" },
     { name = "dagster-postgres", specifier = ">=0.29.18" },
     { name = "dagster-webserver", specifier = ">=1.13.18" },
+    { name = "sqlalchemy", specifier = ">=2.0,<2.1" },
 ]
 
 [package.metadata.requires-dev]
