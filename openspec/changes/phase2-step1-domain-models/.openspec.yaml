@@ -1,2 +1,3 @@
 description: "Add Pydantic domain models for Phase 2 Step 1"
+schema: spec-driven
 skip_specs: true
