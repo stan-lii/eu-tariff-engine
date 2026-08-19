@@ -32,10 +32,20 @@ from tariff_engine.domain.models import (
     TradeMovementCode,
     ValidityPeriod,
 )
+from tariff_engine.domain.validation import (
+    DUTY_EXPRESSION_VALIDATORS,
+    is_customs_duty,
+    validate_flat_per_item_component,
+    validate_handling_fee_component,
+    validate_low_value_consignment_measure,
+)
 
 __all__ = [
     "BudgetError",
     "ConfigurationError",
+    "DUTY_EXPRESSION_VALIDATORS",
+    "is_customs_duty",
+    "DomainModel",
     "DomainModel",
     "DutyExpression",
     "DutyExpressionKind",
@@ -58,4 +68,7 @@ __all__ = [
     "TradeMovementCode",
     "ValidationError",
     "ValidityPeriod",
+    "validate_flat_per_item_component",
+    "validate_handling_fee_component",
+    "validate_low_value_consignment_measure",
 ]

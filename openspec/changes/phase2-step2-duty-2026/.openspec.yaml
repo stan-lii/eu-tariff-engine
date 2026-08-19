@@ -1,0 +1,3 @@
+description: "Validate duty expressions cover the 2026 low value consignment regime"
+schema: spec-driven
+skip_specs: true
